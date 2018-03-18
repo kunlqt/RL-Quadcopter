@@ -23,19 +23,21 @@ class Hover(BaseTask):
             np.array([ max_force,  max_force,  max_force,  max_torque,  max_torque,  max_torque]))
 
         # Task-specific parameters
-        self.max_duration = 5.0  # secs
+        self.max_duration = 7.0  # secs
         self.target_position = np.array([0.0, 0.0, 10.0])
-        self.max_error_position = 8.0
-        self.position_weight = 0.4
+        self.max_error_position = 5.0
+        self.position_weight = 0.5
         self.target_velocity = np.array([0.0, 0.0, 0.0])
-        self.velocity_weight = 0.4
+        self.accel_weight = 0.5
         self.last_timestamp = None
         self.last_position = None
+        self.last_velocity = None
 
     def reset(self):
         self.last_timestamp = None
         self.last_position = None
-        
+        self.last_velocity = None
+
         return Pose(
             position=Point(0.0, 0.0, np.random.normal(0.5, 0.1) + 10),
             orientation=Quaternion(0.0, 0.0, 0.0, 0.0)
@@ -49,33 +51,26 @@ class Hover(BaseTask):
         position = np.array([pose.position.x, pose.position.y, pose.position.z])
         orientation = np.array([pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w])
 
-        # Calculate velocity
+        # Calculate velocity and acceleration
+        accel = np.array([linear_acceleration.x, linear_acceleration.y, linear_acceleration.z])
         if self.last_timestamp is None:
             velocity = np.array([0.0, 0.0, 0.0])
         else:
             velocity = (position - self.last_position) / max(timestamp - self.last_timestamp, 1e-03) # prevent divide by zero
 
-        # we expect that the next reached position is closer to the target than the previous one
-        reward = 0
-        if self.last_position is not None and \
-                abs(pose.position.z - self.target_position[2]) > \
-                abs(self.last_position[2] - self.target_position[2]):
-            reward -= 10
-        else:
-            reward += 10
-
         # Create state space and update lag variables
         state = np.concatenate([position, orientation, velocity])
         self.last_timestamp = timestamp
         self.last_position = position
+        self.last_velocity = velocity
 
         # Compute reward / penalty and check if this episode is complete
         done = False
-        error_position = abs(np.linalg.norm(self.target_position - position))
-        error_velocity = np.linalg.norm(self.target_velocity - velocity)**2
+        error_position = np.linalg.norm(self.target_position - position)
+        sum_accel = np.linalg.norm(accel)
 
-        reward -= (self.position_weight * error_position + \
-                   self.velocity_weight * error_velocity)
+        reward = -(self.position_weight * error_position + \
+                   self.accel_weight * sum_accel)
 
         if error_position > self.max_error_position:
             reward -= 50.0
