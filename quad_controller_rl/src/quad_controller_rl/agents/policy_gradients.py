@@ -107,6 +107,7 @@ class DDPG(BaseAgent):
         :return: desired action vector as NumPy array, compatible with task's action space
         '''
         # Choose an action
+        state = state[0:self.state_size]
         action = self.act(state)
 
         # Save experience / reward
